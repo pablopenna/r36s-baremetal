@@ -1,0 +1,3 @@
+I have a R36S device. I want to write code in asm for it to run it. I have found that it has a rk3326 soc. I have seen places mention uboot, which is in charge of booting up. However, I have inspected the sdcard it comes with and it comes uInitrd, two dtb files and extlinux/extlinux.conf. Which way should I go?
+
+

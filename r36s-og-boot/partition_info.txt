@@ -1,0 +1,12 @@
+Disk /dev/sda: 87.89 GiB, 94371840000 bytes, 184320000 sectors
+Disk model: STORAGE DEVICE  
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: gpt
+Disk identifier: DF00F539-80C8-4821-B189-C668431BE16C
+
+Device        Start       End   Sectors  Size Type
+/dev/sda1     32768   1081343   1048576  512M EFI System
+/dev/sda2   1081344  17858559  16777216    8G Linux filesystem
+/dev/sda3  17858560 184319965 166461406 79.4G Microsoft basic data
