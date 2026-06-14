@@ -13,14 +13,23 @@ OBJDUMP := $(CROSS)objdump
 # -ffreestanding/-nostdlib: no libc, no runtime. We preprocess hello.S with gcc
 # so the #if in the source works.
 ASFLAGS := -nostdlib -ffreestanding -Wall
+# C helper (fdt.c): freestanding, no stack protector / PIC runtime, position-
+# independent via the default adrp small code model so U-Boot may relocate us.
+CFLAGS  := -nostdlib -ffreestanding -fno-stack-protector -fno-pic \
+           -Os -Wall -Wextra -march=armv8-a
+
+OBJS := hello.o fdt.o
 
 all: hello.bin
 
 hello.o: hello.S
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-hello.elf: hello.o linker.ld
-	$(LD) -T linker.ld hello.o -o $@
+fdt.o: fdt.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+hello.elf: $(OBJS) linker.ld
+	$(LD) -T linker.ld $(OBJS) -o $@
 
 hello.bin: hello.elf
 	$(OBJCOPY) -O binary $< $@
@@ -30,6 +39,6 @@ dump: hello.elf
 	$(OBJDUMP) -d hello.elf
 
 clean:
-	rm -f hello.o hello.elf hello.bin
+	rm -f $(OBJS) hello.elf hello.bin
 
 .PHONY: all dump clean

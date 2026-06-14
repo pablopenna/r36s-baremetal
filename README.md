@@ -102,21 +102,75 @@ no OS underneath. See `hello/hello.S` for the concrete implementation.
    loads for the absolute hardware constants (`FB_BASE`, `COLOR`). Nothing depends
    on the link address, so the build's link base is cosmetic.
 
-**Build pipeline** (`Makefile`): assemble `hello.S` with the cross-gcc (so the C
-preprocessor `#if` selecting pixel size works), link with `linker.ld` (which lays
-out `.head`/`.text`, reserves a 16 KiB stack, and computes `_image_size`), then
+**Build pipeline** (`Makefile`): assemble `hello.S` and compile the freestanding
+helper `fdt.c` with the cross-gcc, link both with `linker.ld` (which lays out
+`.head`/`.text`, reserves a 16 KiB stack, and computes `_image_size`), then
 `objcopy -O binary` to strip the ELF down to the **raw image** U-Boot expects.
 
 **Deploy** (`flash.sh`): copy `hello.bin` to the boot partition and point
-`extlinux.conf`'s `LINUX` at it. We keep `FDT` (so `x0` is a valid DTB for later
-work) and drop `INITRD` (unused). The original config is backed up for one-command
-restore.
+`extlinux.conf`'s `LINUX` at it. We keep `FDT` (so `x0` is a valid DTB the program
+parses for the framebuffer address) and drop `INITRD` (unused). The original
+config is backed up for one-command restore.
+
+## Sources of truth & how the framebuffer address was deduced
+
+The conclusions above are not guesses — they come from reading the exact ArkOS
+sources this device boots. Line numbers are from the repos' `HEAD` as fetched
+**2026-06** and may drift as upstream changes.
+
+### Repos consulted
+
+| Repo | What it is | Authority |
+|------|------------|-----------|
+| [`christianhaitian/chi-u-boot`](https://github.com/christianhaitian/chi-u-boot) | The ArkOS bootloader (U-Boot fork) | **Used directly** — boot handoff, framebuffer allocation, pixel format (line cites below) |
+| [`christianhaitian/linux`](https://github.com/christianhaitian/linux) | The ArkOS kernel (VOP / DRM / panel drivers) | Authoritative for the kernel-side display + DTS; cross-checked, reserved for format double-checks and later milestones |
+| [`christianhaitian/oga_controls`](https://github.com/christianhaitian/oga_controls) | The gamepad input driver | Authoritative for button → GPIO mapping; to be used for milestone 4 |
+| [`christianhaitian/arkos`](https://github.com/christianhaitian/arkos) (the wiki link) | Turned out to be the **OTA update distribution** (update `.zip`/`.torrent` bundles) | **Not** build source — not authoritative for code |
+
+### The deduction (all in `chi-u-boot` `drivers/video/drm/rockchip_display.c`)
+
+1. **The framebuffer address is allocated at runtime — there is no constant.**
+   `init_display_buffer(plat->base)` (L1298) sets
+   `memory_start = base + DRM_ROCKCHIP_FB_SIZE` (L139–141), where `plat->base` is
+   reserved from the **top of DRAM by U-Boot's video uclass at boot**.
+   `get_drm_memory()` returns `memory_start - DRM_ROCKCHIP_FB_SIZE` (L1612) — the
+   live buffer. None of this is a compile-time address, so there was nothing in
+   the repo to grep for. (This is why a static number couldn't be "found".)
+
+2. **U-Boot hands that address to us inside the DTB.**
+   `rockchip_display_fixup(void *blob)` (L1446) calls
+   `fdt_update_reserved_memory(blob, "rockchip,drm-logo", get_drm_memory(), …)`
+   (L1459) — it writes the real base/size into the `rockchip,drm-logo`
+   reserved-memory node of the DTB it passes on. That is exactly the node shipped
+   as a placeholder in our tree at
+   [`r36s-og-boot/rf3536k3ka.dts:4416`](r36s-og-boot/rf3536k3ka.dts) —
+   `reg = <0x00 0x00 0x00 0x00>` — which U-Boot overwrites at boot. So our code
+   reads it from the DTB pointer U-Boot leaves in `x0`.
+
+3. **Pixel format is ARGB8888, 32 bpp.** `s->logo.bpp = 32;` (L1057) — confirming
+   `FB_BPP 4` and a 32-bit `COLOR`.
+
+4. **The panel stays on across the handoff.** The "kernel logo" feature
+   (`logo,kernel` in the DTB; logo handed from U-Boot to the kernel) means the VOP
+   keeps scanning out — so the framebuffer is live when we take over.
+
+### Why the tiny C helper (`fdt.c`) exists
+
+Because of (1) and (2), the framebuffer address is only knowable **at runtime**,
+from the DTB in `x0`. A DTB (FDT) is a big-endian, structured binary — a token
+stream plus a string table — and walking it correctly is far cleaner and less
+bug-prone in C than in assembly. So `fdt.c` is a small **freestanding** (no libc,
+no OS) parser: `fdt_find_drm_logo()` returns the framebuffer base (or `0`, in
+which case `hello.S` falls back to the compile-time `FB_BASE`). `hello.S` saves
+the DTB pointer and calls it. This removes the only manual step and makes the
+image correct on every boot, regardless of where U-Boot placed the buffer.
 
 ## Layout
 
 ```
 hello/                 First program: fill the screen with a color.
   hello.S              AArch64 source (image header + framebuffer fill).
+  fdt.c                Freestanding DTB parser: finds the framebuffer address.
   linker.ld            Position-independent link layout.
   Makefile             make -> hello.bin
   flash.sh             Reversibly install onto the boot partition (+ restore).
@@ -136,8 +190,10 @@ sudo apt install gcc-aarch64-linux-gnu   # toolchain
 cd hello && make                         # build hello.bin
 ```
 
-Then set `FB_BASE` in `hello/hello.S` (see [`hello/README.md`](hello/README.md)),
-rebuild, and `./flash.sh /your/boot/mountpoint`.
+The framebuffer address is discovered automatically from the DTB at boot (see
+[Sources of truth](#sources-of-truth--how-the-framebuffer-address-was-deduced)),
+so no editing is needed — just `./flash.sh /your/boot/mountpoint`. See
+[`hello/README.md`](hello/README.md) for details and the on-device sanity check.
 
 > **Always image the whole SD card first:**
 > `sudo dd if=/dev/sdX of=r36s-backup.img bs=4M status=progress`

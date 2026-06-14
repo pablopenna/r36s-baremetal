@@ -54,16 +54,26 @@ _start:
     .long   0                      /* 0x3c res5 (PE/COFF offset, unused)   */
 
 entry:
-    /* Preserve the DTB pointer (x0) for later milestones (button/FB info). */
+    /* Preserve the DTB pointer (x0) -- needed below and for later milestones. */
     mov     x19, x0
 
-    /* Set up a small stack (PC-relative, so load address doesn't matter). */
+    /* Set up a small stack (PC-relative, so load address doesn't matter).
+     * Must be 16-byte aligned before the C call below (AAPCS64). */
     adrp    x1, _stack_top
     add     x1, x1, :lo12:_stack_top
     mov     sp, x1
 
+    /* ---- Discover the framebuffer address from the DTB ----
+     * U-Boot patched the real address into the drm-logo reserved-memory node;
+     * fdt_find_drm_logo() returns it (0 if not found). See fdt.c / README. */
+    mov     x0, x19
+    bl      fdt_find_drm_logo      /* -> x0 = framebuffer base, or 0 */
+    mov     x2, x0
+    cbnz    x2, 1f
+    ldr     x2, =FB_BASE           /* fallback to the compile-time constant */
+1:
+
     /* ---- Fill the framebuffer ---- */
-    ldr     x2, =FB_BASE           /* dest pointer  */
     ldr     w4, =COLOR             /* pixel value   */
     ldr     w3, =(FB_W * FB_H)     /* pixel count   */
 

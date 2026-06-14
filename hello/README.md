@@ -28,27 +28,25 @@ make
 
 Produces `hello.bin`.
 
-## 3. Find the framebuffer address  (the one value you must supply)
+## 3. Framebuffer address — discovered automatically
 
-`FB_BASE` in `hello.S` is `0` (a deliberate placeholder). Get the real address
-the easy way — from the **running stock ArkOS** on the device:
+You do **not** need to find or set the address. At boot, `fdt.c`'s
+`fdt_find_drm_logo()` parses the DTB U-Boot hands us (pointer in `x0`) and reads
+the framebuffer base from the `rockchip,drm-logo` reserved-memory node — the value
+U-Boot patches in. Pixel format is ARGB8888/32 bpp per the U-Boot source, which is
+why `FB_BPP` is `4`. See the root [`README.md`](../README.md) "Sources of truth"
+for the line-level reasoning.
+
+`FB_BASE` in `hello.S` remains only as a **fallback** if the parser returns 0
+(e.g. the fixup didn't run on this boot path).
+
+Optional sanity check, from the **running stock ArkOS**, to compare against what
+the program finds:
 
 ```bash
 # on the R36S over SSH / a terminal:
-dmesg | grep -i 'logo\|rockchip-drm\|Reserved memory'
 cat /proc/device-tree/reserved-memory/drm-logo@*/reg | xxd    # physical FB addr
-cat /proc/iomem | grep -i fb
-```
-
-The `drm-logo` reserved-memory region is the framebuffer U-Boot draws the logo
-into. Put that physical address in `FB_BASE`. Also confirm the pixel format
-(usually XRGB8888 → keep `FB_BPP 4`; if it's RGB565 set `FB_BPP 2` and use a
-16-bit `COLOR` like `0xF800`).
-
-Then rebuild:
-
-```bash
-make
+dmesg | grep -i 'logo\|rockchip-drm'
 ```
 
 ## 4. Flash to the SD card
