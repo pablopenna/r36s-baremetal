@@ -1,0 +1,13 @@
+# Build artifacts
+*.o
+*.elf
+*.bin
+
+# SD card backups / disk images (large)
+*.img
+*.img.*
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
